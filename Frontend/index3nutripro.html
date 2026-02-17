@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NutriScan</title>
+
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        primary: "#4caeaa",
+        "background-light": "#f6f7f7",
+      },
+      fontFamily: {
+        display: ["Inter"]
+      }
+    }
+  }
+}
+</script>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet"/>
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<style>
+body { font-family: 'Inter', sans-serif; }
+</style>
+</head>
+
+<body class="bg-background-light overflow-x-hidden">
+
+<!-- SPLASH SCREEN -->
+<div id="splash" class="fixed inset-0 bg-primary flex items-center justify-center z-50 transition-opacity duration-1000">
+  <h1 class="text-white text-5xl font-black tracking-widest">NUTRISCAN</h1>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" class="hidden relative">
+
+<!-- REFINED BACKGROUND STICKERS -->
+<div class="absolute inset-0 pointer-events-none overflow-hidden">
+
+  <span class="absolute top-10 left-10 text-primary text-8xl opacity-10">🥦</span>
+  <span class="absolute top-20 right-16 text-primary text-7xl opacity-10">🍎</span>
+  <span class="absolute top-1/3 left-20 text-primary text-9xl opacity-10">🥕</span>
+  <span class="absolute top-1/2 right-24 text-primary text-8xl opacity-10">🥑</span>
+  <span class="absolute bottom-24 left-32 text-primary text-7xl opacity-10">🥬</span>
+  <span class="absolute bottom-16 right-10 text-primary text-9xl opacity-10">🍊</span>
+
+  <span class="absolute top-1/4 left-1/3 text-primary text-[12rem] opacity-[0.04]">
+    🥗
+  </span>
+
+</div>
+
+<header class="bg-white border-b border-[#eaf0f0] px-6 md:px-40 py-3 flex justify-between">
+  <h2 class="text-xl font-bold">NutriScan</h2>
+  <span class="material-symbols-outlined text-primary">person</span>
+</header>
+
+<main class="flex justify-center py-8 px-4">
+<div class="max-w-[720px] w-full relative">
+
+<!-- PROGRESS BAR -->
+<div class="mb-6">
+  <div class="flex justify-between mb-2">
+    <p class="font-semibold">Scan Progress</p>
+    <p id="progress-text" class="text-primary font-bold">0%</p>
+  </div>
+  <div class="rounded-full bg-[#d6e1e1] h-3">
+    <div id="progress-bar" class="h-full bg-primary rounded-full w-0 transition-all duration-500"></div>
+  </div>
+</div>
+
+<!-- ACTION SECTIONS -->
+<div class="space-y-4">
+
+  <!-- SCAN CAMERA -->
+  <button onclick="startScanner()" 
+    class="w-full bg-white border border-[#eaf0f0] rounded-xl p-6 shadow-sm hover:shadow-md transition flex items-center gap-4">
+    <span class="material-symbols-outlined text-primary text-3xl">qr_code_scanner</span>
+    <div>
+      <p class="font-bold">Scan Barcode</p>
+      <p class="text-sm text-[#608584]">Use camera to scan product</p>
+    </div>
+  </button>
+
+  <!-- ENTER BARCODE -->
+  <div class="bg-white border border-[#eaf0f0] rounded-xl p-6 shadow-sm">
+    <div class="flex items-center gap-4 mb-3">
+      <span class="material-symbols-outlined text-primary text-3xl">dialpad</span>
+      <p class="font-bold">Enter Barcode</p>
+    </div>
+    <div class="flex gap-2">
+      <input id="barcode-input" type="text" placeholder="Enter barcode number"
+        class="flex-1 rounded-lg border-[#d6e1e1] focus:ring-primary focus:border-primary">
+      <button onclick="searchByBarcode()" class="bg-primary text-white px-4 rounded-lg">
+        Search
+      </button>
+    </div>
+  </div>
+
+  <!-- SEARCH PRODUCT NAME -->
+  <div class="bg-white border border-[#eaf0f0] rounded-xl p-6 shadow-sm">
+    <div class="flex items-center gap-4 mb-3">
+      <span class="material-symbols-outlined text-primary text-3xl">search</span>
+      <p class="font-bold">Search by Product Name</p>
+    </div>
+    <div class="flex gap-2">
+      <input id="product-input" type="text" placeholder="Enter product name"
+        class="flex-1 rounded-lg border-[#d6e1e1] focus:ring-primary focus:border-primary">
+      <button onclick="searchByName()" class="bg-primary text-white px-4 rounded-lg">
+        Search
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<div id="reader" class="mt-6"></div>
+
+<!-- PRODUCT RESULT -->
+<div id="product-card" class="hidden mt-6 bg-white border border-[#eaf0f0] rounded-xl p-6 shadow-sm">
+  <img id="product-image" class="w-full max-h-[250px] object-contain mb-4">
+  <h2 id="product-name" class="text-2xl font-bold"></h2>
+  <p id="product-type" class="text-sm text-[#608584]"></p>
+  <p id="veg-status" class="font-semibold mt-1"></p>
+
+  <div class="mt-4 rounded-full bg-[#d6e1e1] h-3">
+    <div id="health-meter" class="h-full rounded-full transition-all duration-500"></div>
+  </div>
+  <p id="health-label" class="font-bold mt-2"></p>
+
+  <div id="allergen-warning" class="hidden mt-4 p-4 rounded-lg bg-red-100 border border-red-400 text-red-700 font-semibold flex gap-2">
+    <span class="material-symbols-outlined">warning</span>
+    Contains Allergens
+  </div>
+
+  <div class="mt-4">
+    <h3 class="font-bold">Allergens</h3>
+    <ul id="allergens" class="list-disc pl-5 text-red-600 font-semibold"></ul>
+  </div>
+
+  <div class="mt-4">
+    <h3 class="font-bold">Additives</h3>
+    <ul id="additives" class="list-disc pl-5"></ul>
+  </div>
+
+</div>
+
+</div>
+</main>
+</div>
+
+<script>
+
+/* Splash Screen */
+setTimeout(()=>{
+  document.getElementById("splash").style.opacity="0";
+  setTimeout(()=>{
+    document.getElementById("splash").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
+  },1000);
+},6000);
+
+/* Progress Animation */
+function updateProgress(){
+  const bar=document.getElementById("progress-bar");
+  const text=document.getElementById("progress-text");
+  let percent=0;
+  bar.style.width="0%";
+  text.innerText="0%";
+
+  const interval=setInterval(()=>{
+    percent+=10;
+    bar.style.width=percent+"%";
+    text.innerText=percent+"%";
+    if(percent>=100) clearInterval(interval);
+  },100);
+}
+
+/* Scanner */
+function startScanner(){
+  const html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start({ facingMode:"environment" },{ fps:10, qrbox:250 },
+  barcode=>{
+    html5QrCode.stop();
+    fetchProduct(barcode);
+  });
+}
+
+/* Search by Barcode */
+function searchByBarcode(){
+  const code=document.getElementById("barcode-input").value;
+  if(code) fetchProduct(code);
+}
+
+/* Search by Name */
+function searchByName(){
+  const name=document.getElementById("product-input").value;
+  fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${name}&search_simple=1&json=1`)
+  .then(res=>res.json())
+  .then(data=>{
+    if(data.products.length>0){
+      fetchProduct(data.products[0].code);
+    }
+  });
+}
+
+/* Fetch Product */
+function fetchProduct(barcode){
+  updateProgress();
+  fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`)
+  .then(res=>res.json())
+  .then(data=>{
+    const p=data.product;
+    document.getElementById("product-card").classList.remove("hidden");
+
+    document.getElementById("product-name").innerText=p.product_name||"Unknown";
+    document.getElementById("product-type").innerText=p.categories||"";
+    document.getElementById("veg-status").innerText=
+      p.ingredients_analysis_tags?.includes("en:vegetarian")?"Vegetarian":"Non-Vegetarian";
+
+    document.getElementById("product-image").src=p.image_url||"";
+
+    const meter=document.getElementById("health-meter");
+    const score=p.nutriscore_score||0;
+    const percent=Math.min(Math.abs(score)*10,100);
+    meter.style.width=percent+"%";
+    meter.className=`h-full rounded-full ${score<=0?"bg-green-500":score<=10?"bg-yellow-500":"bg-red-500"}`;
+
+    const allergens=document.getElementById("allergens");
+    allergens.innerHTML="";
+    if(p.allergens_tags?.length){
+      document.getElementById("allergen-warning").classList.remove("hidden");
+      p.allergens_tags.forEach(a=>{
+        const li=document.createElement("li");
+        li.innerText=a.replace("en:","");
+        allergens.appendChild(li);
+      });
+    } else {
+      document.getElementById("allergen-warning").classList.add("hidden");
+      allergens.innerHTML="<li>No allergens detected</li>";
+    }
+
+    const additives=document.getElementById("additives");
+    additives.innerHTML="";
+    p.additives_tags?.forEach(a=>{
+      const li=document.createElement("li");
+      li.innerText=a.replace("en:","");
+      additives.appendChild(li);
+    });
+  });
+}
+
+</script>
+
+</body>
+</html>
