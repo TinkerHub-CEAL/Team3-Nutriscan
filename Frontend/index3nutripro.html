@@ -81,7 +81,7 @@ body { font-family: 'Inter', sans-serif; }
 <div class="space-y-4">
 
   <!-- SCAN CAMERA -->
-  <button onclick="startScanner()" 
+  <button id="scan-btn" onclick="startScanner()" 
     class="w-full bg-white border border-[#eaf0f0] rounded-xl p-6 shadow-sm hover:shadow-md transition flex items-center gap-4">
     <span class="material-symbols-outlined text-primary text-3xl">qr_code_scanner</span>
     <div>
@@ -99,7 +99,7 @@ body { font-family: 'Inter', sans-serif; }
     <div class="flex gap-2">
       <input id="barcode-input" type="text" placeholder="Enter barcode number"
         class="flex-1 rounded-lg border-[#d6e1e1] focus:ring-primary focus:border-primary">
-      <button onclick="searchByBarcode()" class="bg-primary text-white px-4 rounded-lg">
+      <button id="manual-scan-btn" onclick="handleManualBarcode()" class="bg-primary text-white px-4 rounded-lg">
         Search
       </button>
     </div>
@@ -114,7 +114,7 @@ body { font-family: 'Inter', sans-serif; }
     <div class="flex gap-2">
       <input id="product-input" type="text" placeholder="Enter product name"
         class="flex-1 rounded-lg border-[#d6e1e1] focus:ring-primary focus:border-primary">
-      <button onclick="searchByName()" class="bg-primary text-white px-4 rounded-lg">
+      <button id="search-btn" class="bg-primary text-white px-4 rounded-lg">
         Search
       </button>
     </div>
@@ -124,17 +124,43 @@ body { font-family: 'Inter', sans-serif; }
 
 <div id="reader" class="mt-6"></div>
 
-<!-- PRODUCT RESULT -->
-<div id="product-card" class="hidden mt-6 bg-white border border-[#eaf0f0] rounded-xl p-6 shadow-sm">
+<!-- Loading Indicator -->
+<div id="loading" class="hidden mt-6 p-4 text-center text-primary font-semibold animate-pulse">
+  <span class="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+  Loading...
+</div>
+
+<!-- Error Message -->
+<div id="error" class="hidden p-4 mb-6 bg-red-50 text-red-600 rounded-xl border border-red-100 font-medium text-center animate-fade-in"></div>
+
+<!-- Search Results List -->
+<div id="search-list" class="hidden space-y-3 mb-6 animate-fade-in"></div>
+
+<!-- Product Result -->
+<div id="result" class="hidden bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 animate-slide-up">
   <img id="product-image" class="w-full max-h-[250px] object-contain mb-4">
   <h2 id="product-name" class="text-2xl font-bold"></h2>
   <p id="product-type" class="text-sm text-[#608584]"></p>
   <p id="veg-status" class="font-semibold mt-1"></p>
 
-  <div class="mt-4 rounded-full bg-[#d6e1e1] h-3">
-    <div id="health-meter" class="h-full rounded-full transition-all duration-500"></div>
+  <!-- Health Meter Dial -->
+  <div class="mt-6 relative w-48 h-24 mx-auto overflow-hidden">
+    <!-- Gauge Background: Green / Orange / Red -->
+    <div class="absolute inset-0 rounded-t-full" 
+         style="background: conic-gradient(from 270deg at 50% 100%, #22c55e 0deg 60deg, #fbbf24 60deg 120deg, #ef4444 120deg 180deg, transparent 180deg);">
+    </div>
+    <!-- Inner Mask to create the arc -->
+    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-32 h-32 bg-white rounded-full"></div>
+    
+    <!-- Needle -->
+    <div id="gauge-needle" 
+         class="absolute bottom-0 left-1/2 w-1 h-20 bg-gray-800 -ml-0.5 origin-bottom transition-transform duration-700 ease-out" 
+         style="transform: rotate(-90deg); border-radius: 999px 999px 0 0;">
+    </div>
+    <!-- Center Pin -->
+    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-4 h-4 bg-gray-800 rounded-full border-2 border-white"></div>
   </div>
-  <p id="health-label" class="font-bold mt-2"></p>
+  <p id="health-label" class="text-center font-bold mt-2 text-lg"></p>
 
   <div id="allergen-warning" class="hidden mt-4 p-4 rounded-lg bg-red-100 border border-red-400 text-red-700 font-semibold flex gap-2">
     <span class="material-symbols-outlined">warning</span>
@@ -166,6 +192,18 @@ body { font-family: 'Inter', sans-serif; }
    ────────────────────────────────────────────── */
 const API_BASE = "";
 
+/* DOM Elements */
+const barcodeInput = document.getElementById("barcode-input");
+const productInput = document.getElementById("product-input");
+const scanBtn = document.getElementById("scan-btn");
+const manualScanBtn = document.getElementById("manual-scan-btn");
+const searchBtn = document.getElementById("search-btn");
+const loadingDiv = document.getElementById("loading");
+const errorDiv = document.getElementById("error");
+const resultDiv = document.getElementById("result");
+const searchListDiv = document.getElementById("search-list");
+
+
 /* Splash Screen */
 setTimeout(() => {
   document.getElementById("splash").style.opacity = "0";
@@ -192,70 +230,270 @@ function updateProgress() {
 }
 
 /* Scanner — uses html5-qrcode to read barcode from camera */
-function startScanner() {
-  const html5QrCode = new Html5Qrcode("reader");
-  html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: 250 },
-    barcode => {
-      html5QrCode.stop();
-      fetchProduct(barcode);
+let html5QrCode = null;
+
+async function startScanner() {
+  console.log("Starting scanner...");
+  const readerDiv = document.getElementById("reader");
+  readerDiv.style.minHeight = "250px";
+  readerDiv.classList.remove("hidden");
+
+  if (html5QrCode) {
+    try {
+      await html5QrCode.stop();
+    } catch (e) {
+      // ignore
     }
-  );
+  }
+
+  html5QrCode = new Html5Qrcode("reader");
+  
+  const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+  
+  // Try environment camera first, then fall back to any camera
+  try {
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      config,
+      barcode => {
+        console.log("Scanned barcode:", barcode);
+        html5QrCode.stop().then(() => {
+          readerDiv.classList.add("hidden");
+          fetchProductDetails(barcode);
+        });
+      }
+    );
+  } catch (err) {
+    console.warn("Environment camera not found, trying default camera...", err);
+    try {
+      await html5QrCode.start(
+        { facingMode: "user" }, // Try front camera as fallback
+        config,
+        barcode => {
+          html5QrCode.stop().then(() => {
+            readerDiv.classList.add("hidden");
+            fetchProductDetails(barcode);
+          });
+        }
+      );
+    } catch (err2) {
+      showError("Camera access denied or no camera found: " + err2);
+      console.error(err2);
+    }
+  }
+}
+
+function handleManualBarcode() {
+  const code = barcodeInput.value.trim();
+  if (code) {
+    console.log("Manual barcode lookup:", code);
+    fetchProductDetails(code);
+  }
 }
 
 /* Search by Barcode — manual entry */
-function searchByBarcode() {
-  const code = document.getElementById("barcode-input").value.trim();
-  if (code) fetchProduct(code);
-}
+// function searchByBarcode() {
+//   const code = document.getElementById("barcode-input").value.trim();
+//   if (code) fetchProduct(code);
+// }
 
 /* Search by Name — calls the backend /search-product endpoint */
-function searchByName() {
-  const name = document.getElementById("product-input").value.trim();
-  if (!name) return;
+// function searchByName() {
+//   const name = document.getElementById("product-input").value.trim();
+//   if (!name) return;
 
-  updateProgress();
+//   updateProgress();
 
-  fetch(`${API_BASE}/search-product`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name })
-  })
-    .then(res => {
-      if (!res.ok) return res.json().then(err => { throw err; });
-      return res.json();
-    })
-    .then(data => renderProduct(data))
-    .catch(err => {
-      alert(err.error || "Product not found");
-      console.error("Search error:", err);
-    });
-}
+//   fetch(`${API_BASE}/search-product`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({ name: name })
+//   })
+//     .then(res => {
+//       if (!res.ok) return res.json().then(err => { throw err; });
+//       return res.json();
+//     })
+//     .then(data => renderProduct(data))
+//     .catch(err => {
+//       alert(err.error || "Product not found");
+//       console.error("Search error:", err);
+//     });
+// }
 
 /* Fetch Product by barcode — calls the backend /scan-barcode endpoint */
-function fetchProduct(barcode) {
-  updateProgress();
+// function fetchProduct(barcode) {
+//   updateProgress();
 
-  fetch(`${API_BASE}/scan-barcode`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ barcode: barcode })
-  })
-    .then(res => {
-      if (!res.ok) return res.json().then(err => { throw err; });
-      return res.json();
-    })
-    .then(data => renderProduct(data))
-    .catch(err => {
-      alert(err.error || "Product not found");
-      console.error("Fetch error:", err);
+//   fetch(`${API_BASE}/scan-barcode`, {
+//     method: "POST",
+//     headers: { "Content-Type": "application/json" },
+//     body: JSON.stringify({ barcode: barcode })
+//   })
+//     .then(res => {
+//       if (!res.ok) return res.json().then(err => { throw err; });
+//       return res.json();
+//     })
+//     .then(data => renderProduct(data))
+//     .catch(err => {
+//       alert(err.error || "Product not found");
+//       console.error("Fetch error:", err);
+//     });
+// }
+
+  // ──────────────────────────────────────────────
+  // Helper: Fetch Product by Barcode
+  // ──────────────────────────────────────────────
+  async function fetchProductDetails(barcode) {
+    if (!barcode) return;
+
+    loadingDiv.classList.remove("hidden");
+    errorDiv.classList.add("hidden");
+    resultDiv.classList.add("hidden");
+    searchListDiv.classList.add("hidden");
+    updateProgress();
+
+    try {
+      const response = await fetch(`${API_BASE}/scan-barcode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ barcode: barcode }),
+      });
+      const data = await response.json();
+      loadingDiv.classList.add("hidden");
+
+      if (response.ok) {
+        renderProduct(data);
+      } else {
+        showError(data.error || "Product not found.");
+      }
+    } catch (err) {
+      loadingDiv.classList.add("hidden");
+      showError("Could not connect to server. Ensure backend is running.");
+      console.error(err);
+    }
+  }
+
+  function showError(msg) {
+    errorDiv.innerText = msg;
+    errorDiv.classList.remove("hidden");
+  }
+
+  // ──────────────────────────────────────────────
+  // Helper: Render Search Results List
+  // ──────────────────────────────────────────────
+  function renderSearchResults(products) {
+    searchListDiv.innerHTML = "";
+    searchListDiv.classList.remove("hidden");
+    resultDiv.classList.add("hidden");
+    errorDiv.classList.add("hidden");
+
+    if (!products || products.length === 0) {
+      showError("No products found.");
+      return;
+    }
+
+    products.forEach(p => {
+      const card = document.createElement("div");
+      card.className = "flex items-center p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md cursor-pointer transition-all hover:border-primary group";
+      
+      // Determine image
+      let imgHTML = `<div class="w-16 h-16 bg-gray-100 rounded-lg mr-4 flex items-center justify-center text-gray-400 group-hover:bg-primary-light transition-colors"><span class="material-symbols-outlined">image_not_supported</span></div>`;
+      if (p.image) {
+        imgHTML = `<img src="${p.image}" class="w-16 h-16 object-cover rounded-lg mr-4 border border-gray-100" alt="${p.product_name}">`;
+      }
+
+      card.innerHTML = `
+          ${imgHTML}
+          <div class="flex-1">
+              <h3 class="font-bold text-gray-800 text-lg group-hover:text-primary transition-colors">${p.product_name}</h3>
+              <p class="text-sm text-gray-500">${p.brand || "Unknown Brand"}</p>
+          </div>
+          <span class="material-symbols-outlined text-gray-400 group-hover:text-primary group-hover:translate-x-1 transition-all">chevron_right</span>
+      `;
+      
+      // Click -> Fetch Details
+      card.onclick = () => fetchProductDetails(p.barcode);
+      
+      searchListDiv.appendChild(card);
     });
-}
+  }
+
+
+  // ──────────────────────────────────────────────
+  // Event Listeners
+  // ──────────────────────────────────────────────
+  
+  // Handle ENTER key on inputs
+  barcodeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleManualBarcode();
+  });
+
+  productInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") searchBtn.click();
+  });
+
+  // SCAN Button (Manual)
+  if (manualScanBtn) {
+    manualScanBtn.addEventListener("click", () => {
+      const barcode = barcodeInput.value.trim();
+      if (!barcode) {
+        showError("Please enter a barcode.");
+        return;
+      }
+      fetchProductDetails(barcode);
+    });
+  }
+
+  // Camera Scan is handled by onclick="startScanner()" in HTML
+  
+  // SEARCH Button (Name)
+  if (searchBtn) {
+    searchBtn.addEventListener("click", async () => {
+      const name = productInput.value.trim();
+      if (!name) {
+        showError("Please enter a product name.");
+        return;
+      }
+
+      loadingDiv.classList.remove("hidden");
+      errorDiv.classList.add("hidden");
+      resultDiv.classList.add("hidden");
+      searchListDiv.classList.add("hidden");
+      updateProgress();
+
+      try {
+        const response = await fetch(`${API_BASE}/search-product`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name }),
+        });
+        const data = await response.json();
+        loadingDiv.classList.add("hidden");
+
+        if (response.ok) {
+          // Handle List Response
+          if (data.products) {
+            renderSearchResults(data.products);
+          } else {
+            // Fallback if a single product is returned
+            renderProduct(data);
+          }
+        } else {
+          showError(data.error || "Product not found.");
+        }
+      } catch (err) {
+        loadingDiv.classList.add("hidden");
+        showError("Server error.");
+        console.error(err);
+      }
+    });
+  }
 
 /* Render the product data into the UI */
 function renderProduct(p) {
-  document.getElementById("product-card").classList.remove("hidden");
+  resultDiv.classList.remove("hidden");
+  searchListDiv.classList.add("hidden");
+  errorDiv.classList.add("hidden");
 
   // Basic info
   document.getElementById("product-name").innerText = p.product_name || "Unknown";
@@ -267,15 +505,36 @@ function renderProduct(p) {
   document.getElementById("veg-status").innerText =
     vegTags.includes("en:vegetarian") ? "🟢 Vegetarian" : "🔴 Non-Vegetarian";
 
-  // Health meter (nutriscore)
-  const meter = document.getElementById("health-meter");
-  const score = p.nutriscore_score || 0;
-  const percent = Math.min(Math.abs(score) * 10, 100);
-  meter.style.width = percent + "%";
-  meter.className =
-    `h-full rounded-full transition-all duration-500 ${score <= 0 ? "bg-green-500" : score <= 10 ? "bg-yellow-500" : "bg-red-500"}`;
-  document.getElementById("health-label").innerText =
-    score <= 0 ? "Healthy" : score <= 10 ? "Moderate" : "Unhealthy";
+  // Health meter (Dial)
+  const needle = document.getElementById("gauge-needle");
+  const score = p.nutriscore_score !== undefined ? p.nutriscore_score : 10;
+  
+  // Nutri-Score typically ranges from -15 (best) to 40 (worst).
+  const minScore = -15;
+  const maxScore = 40;
+  const clamped = Math.max(minScore, Math.min(maxScore, score));
+  
+  // Map score to angle: -90deg (green start) to +90deg (red end)
+  const range = maxScore - minScore;
+  const ratio = (clamped - minScore) / range;
+  const deg = -90 + (ratio * 180);
+  
+  needle.style.transform = `rotate(${deg}deg)`;
+
+  const label = document.getElementById("health-label");
+  let labelText = "Moderate";
+  let labelColor = "text-yellow-600";
+  
+  if (score <= 0) {
+    labelText = "Healthy";
+    labelColor = "text-green-600";
+  } else if (score > 10) {
+    labelText = "Unhealthy";
+    labelColor = "text-red-600";
+  }
+  
+  label.innerText = labelText;
+  label.className = `text-center font-bold mt-2 text-lg ${labelColor}`;
 
   // Allergens
   const allergens = document.getElementById("allergens");
@@ -293,37 +552,64 @@ function renderProduct(p) {
     allergens.innerHTML = "<li>No allergens detected</li>";
   }
 
-  // Additives
+  // Additives & Preservatives (Unified Rich List)
   const additivesList = document.getElementById("additives");
   additivesList.innerHTML = "";
+  
   const additivesArr = p.additives || [];
+  
   if (additivesArr.length) {
-    additivesArr.forEach(a => {
+    additivesArr.forEach(item => {
+      // Determine color based on status
+      let statusColor = "text-gray-500";
+      let statusIcon = "help";
+      const status = (item.status || "").toLowerCase();
+      
+      if (status.includes("halal") || status.includes("safe")) {
+        statusColor = "text-green-600";
+        statusIcon = "check_circle";
+      } else if (status.includes("doubtful") || status.includes("risk")) {
+        statusColor = "text-orange-600";
+        statusIcon = "warning";
+      } else if (status.includes("haram") || status.includes("unsafe")) {
+        statusColor = "text-red-600";
+        statusIcon = "cancel";
+      }
+
       const li = document.createElement("li");
-      li.innerText = a;
+      li.className = "mb-3 p-3 bg-gray-50 rounded-lg border border-gray-100";
+      
+      li.innerHTML = `
+        <div class="flex justify-between items-start">
+          <div>
+            <span class="font-bold text-gray-800">${item.code}</span>
+            <span class="font-semibold text-gray-700"> - ${item.title}</span>
+          </div>
+          <span class="flex items-center text-xs font-bold uppercase tracking-wider ${statusColor}">
+            <span class="material-symbols-outlined text-sm mr-1">${statusIcon}</span>
+            ${item.status || "Unknown"}
+          </span>
+        </div>
+        
+        <div class="mt-1 text-xs text-gray-500 font-medium">
+          Type: <span class="text-gray-700">${item.type}</span>
+        </div>
+        
+        <p class="mt-2 text-sm text-gray-600 leading-relaxed">
+          ${item.info || "No description available."}
+        </p>
+      `;
+      
       additivesList.appendChild(li);
     });
+    
+    // Remove the simple list styles since we are using cards now
+    additivesList.classList.remove("list-disc", "pl-5");
+    
   } else {
+    // Reset if empty
+    additivesList.classList.add("list-disc", "pl-5");
     additivesList.innerHTML = "<li>No additives found</li>";
-  }
-
-  // Preservatives (new section — appended under additives if present)
-  const preservatives = p.preservatives || [];
-  if (preservatives.length) {
-    const heading = document.createElement("h3");
-    heading.className = "font-bold mt-4";
-    heading.innerText = "Preservatives";
-    const ul = document.createElement("ul");
-    ul.className = "list-disc pl-5 text-orange-600 font-semibold";
-    preservatives.forEach(pr => {
-      const li = document.createElement("li");
-      li.innerText = pr;
-      ul.appendChild(li);
-    });
-    // Insert after the additives section
-    const additivesContainer = additivesList.parentElement;
-    additivesContainer.after(ul);
-    additivesContainer.after(heading);
   }
 
   // Ingredients
@@ -333,8 +619,8 @@ function renderProduct(p) {
     if (!ingredientsSection) {
       ingredientsSection = document.createElement("div");
       ingredientsSection.id = "ingredients-section";
-      ingredientsSection.className = "mt-4";
-      document.getElementById("product-card").appendChild(ingredientsSection);
+      ingredientsSection.className = "mt-4 p-4";
+      resultDiv.appendChild(ingredientsSection);
     }
     ingredientsSection.innerHTML =
       `<h3 class="font-bold">Ingredients</h3>
