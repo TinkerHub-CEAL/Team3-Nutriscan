@@ -54,4 +54,4 @@ Transforms raw API data into structured, simplified JSON for instant UI feedback
 
 ## 📂 Project Structure
 
-url:team3-nutriscan-production.up.railway.app
+url:(https://team3-nutriscan-production.up.railway.app/)
